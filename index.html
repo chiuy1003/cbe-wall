@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CBE Wall</title>
+<style>
+:root{--bg:#f3f2ee;--bar:#fbfaf7;--ink:#20242a;--muted:#5d646d;--line:#d9d6ce;--accent:#2c6c8c;--wall:#e7e4dc}
+@media (prefers-color-scheme:dark){:root{--bg:#15171a;--bar:#1c1f23;--ink:#ebeae6;--muted:#a2a8af;--line:#31353b;--accent:#86bcd6;--wall:#0f1113}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{display:flex;flex-direction:column;background:var(--bg);color:var(--ink);font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+header{display:flex;align-items:center;gap:4px;padding:0 8px;background:var(--bar);border-bottom:1px solid var(--line)}
+header button{font:inherit;color:var(--muted);background:none;border:0;border-bottom:3px solid transparent;padding:10px 12px;cursor:pointer}
+header button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+#viewer{position:relative;flex:1;min-height:240px;background:var(--wall)}
+.tools{position:absolute;top:10px;right:10px;z-index:5;display:flex;gap:6px}
+.tools button{width:38px;height:38px;border-radius:8px;border:1px solid var(--line);background:var(--bar);color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+p.hint{margin:0;padding:6px 12px;font-size:13px;color:var(--muted);background:var(--bar);border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<header role="tablist" aria-label="Walls">
+  <button role="tab" data-wall="panel">Panel Wall</button>
+  <button role="tab" data-wall="concrete">Concrete Wall</button>
+</header>
+<div id="viewer">
+  <div class="tools">
+    <button id="zoomIn" aria-label="Zoom in" title="Zoom in"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+    <button id="zoomOut" aria-label="Zoom out" title="Zoom out"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+    <button id="whole" aria-label="Show the whole wall" title="Show the whole wall"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+  </div>
+</div>
+<p class="hint">Drag or scroll sideways to move along the wall. Scroll, pinch or double-click to zoom.</p>
+
+<script src="lib/openseadragon.min.js"></script>
+<script>
+// Deep Zoom descriptors inline (same as walls/*.xml) so the page also works opened straight from disk.
+const dzi = (wall, Width, Height) => ({ Image: { xmlns: 'http://schemas.microsoft.com/deepzoom/2008',
+  Url: 'walls/' + wall + '_files/', Format: 'jpg', Overlap: '1', TileSize: '2046', Size: { Width, Height } } });
+const WALLS = { panel: dzi('panel', '67658', '2552'), concrete: dzi('concrete', '40195', '3560') };
+
+const viewer = OpenSeadragon({
+  id: 'viewer', prefixUrl: '', showNavigationControl: false,
+  visibilityRatio: 1, constrainDuringPan: true, minZoomImageRatio: 1, maxZoomPixelRatio: 2.5,
+  gestureSettingsMouse: { clickToZoom: false, dblClickToZoom: true },
+  gestureSettingsTouch: { pinchRotate: false }, animationTime: 0.6
+});
+const vp = () => viewer.viewport;
+const tabs = document.querySelectorAll('header button');
+
+// Open a wall zoomed so it fills the height, starting at the left end.
+function show(wall) {
+  tabs.forEach(b => b.setAttribute('aria-selected', String(b.dataset.wall === wall)));
+  try { history.replaceState(null, '', '#' + wall); } catch (e) {}
+  viewer.addOnceHandler('open', () => {
+    const s = viewer.world.getItemAt(0).getContentSize(), aspect = s.y / s.x;
+    const c = vp().getContainerSize();
+    vp().fitBounds(new OpenSeadragon.Rect(0, 0, Math.min(1, aspect * c.x / c.y), aspect), true);
+  });
+  viewer.open(WALLS[wall]);
+}
+tabs.forEach(b => b.onclick = () => show(b.dataset.wall));
+
+document.getElementById('zoomIn').onclick = () => { vp().zoomBy(1.6); vp().applyConstraints(); };
+document.getElementById('zoomOut').onclick = () => { vp().zoomBy(1 / 1.6); vp().applyConstraints(); };
+document.getElementById('whole').onclick = () => vp().goHome();
+
+// Sideways scrolling (trackpad swipe, tilt wheel, Shift + wheel) pans along the wall; up/down still zooms.
+document.getElementById('viewer').addEventListener('wheel', e => {
+  if (e.ctrlKey) return;
+  const unit = e.deltaMode === 1 ? 16 : 1;
+  const dx = (e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * unit;
+  if (Math.abs(dx) <= Math.abs(e.shiftKey ? 0 : e.deltaY)) return;
+  e.preventDefault(); e.stopPropagation();
+  vp().panBy(vp().deltaPointsFromPixels(new OpenSeadragon.Point(dx, 0), true), true);
+  vp().applyConstraints(true);
+}, { capture: true, passive: false });
+
+show(location.hash === '#concrete' ? 'concrete' : 'panel');
+</script>
+</body>
+</html>
